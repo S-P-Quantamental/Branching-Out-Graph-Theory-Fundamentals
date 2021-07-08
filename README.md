@@ -190,3 +190,72 @@ plot.renderers.append(layout)
 
 show(plot)
 ```
+
+## SQL Queries
+
+```sql
+WITH passed_finance AS (
+SELECT b.billkey, b.congresssession
+FROM fnbill b
+JOIN fnbillversion v ON v.gpoversioncode = b.gpoversioncode
+JOIN fnbillindustry bi ON bi.congresssession = b.congresssession 
+  AND bi.billkey = b.billkey 
+  AND left(bi.gicscode, 2) = 40 --Financials
+  AND bi.industryscore >= .5
+WHERE cqversiontype LIKE '%passed%')
+SELECT COUNT(DISTINCT bs.billkey) sponsors, bs.sponsorid, cs.sponsorname
+FROM fnbillsponsors bs
+JOIN fncongresssponsor cs on cs.sponsorid = bs.sponsorid AND cs.congresssession = bs.congresssession
+JOIN passed_finance ps on ps.billkey = bs.billkey AND ps.congresssession = bs.congresssession
+WHERE bs.congresssession = 112
+  AND left(bs.billkey, 1) = 'S' --Senate
+GROUP BY bs.sponsorid, cs.sponsorname
+ORDER BY sponsors DESC
+```
+
+```sql
+WITH passed_finance AS (
+SELECT b.billkey, b.congresssession
+FROM fnbill b
+JOIN fnbillversion v ON v.gpoversioncode = b.gpoversioncode
+JOIN fnbillindustry bi ON bi.congresssession = b.congresssession 
+  AND bi.billkey = b.billkey 
+  AND left(bi.gicscode, 2) = 40 --Financials
+  AND bi.industryscore >= .5
+WHERE cqversiontype LIKE '%passed%'
+GROUP BY b.billkey, b.congresssession
+), sponsors AS (
+SELECT c.sponsorid, b.BILLKEY, b.CONGRESSSESSION
+FROM fnbill b
+JOIN fnbillsponsors s ON s.congresssession = b.congresssession
+  AND s.billkey = b.billkey
+  AND s.gpoversioncode = b.gpoversioncode
+JOIN fncongresssponsor c ON c.congresssession = s.congresssession
+  AND s.sponsorid = c.sponsorid
+JOIN passed_finance pf ON pf.billkey = b.billkey 
+  AND pf.congresssession = b.congresssession
+WHERE b.congresssession = 112
+  AND LEFT(b.billkey, 1) = 'S' --Senate
+  AND c.statecode NOT IN ('AS', 'FM', 'GU', 'MH', 'MP', 'PR', 'PW', 'VI', 'DC')
+GROUP BY c.sponsorid, b.BILLKEY, b.CONGRESSSESSION
+), agg AS (
+SELECT s1.sponsorid AS sponsor1, s2.sponsorid AS sponsor2, s1.billkey
+FROM sponsors s1
+JOIN sponsors s2 ON s1.billkey = s2.billkey 
+  AND s1.sponsorid != s2.sponsorid 
+  AND s1.sponsorid < s2.sponsorid
+)
+SELECT sponsor1, cs1.sponsorname, cs1.politicalparty, cs1.statecode, 
+  sponsor2, cs2.sponsorname, cs2.politicalparty, cs2.statecode, 
+  COUNT(DISTINCT billkey) AS cosponsors
+FROM agg
+JOIN fncongresssponsor cs1 ON cs1.sponsorid = sponsor1 
+  AND cs1.congresssession = 112
+JOIN fncongresssponsor cs2 ON cs2.sponsorid = sponsor2 
+  AND cs2.congresssession = 112
+GROUP BY sponsor1, cs1.sponsorname, cs1.politicalparty, cs1.statecode, 
+  sponsor2, cs2.sponsorname, cs2.politicalparty, cs2.statecode
+ORDER BY cosponsors DESC
+```
+
+
